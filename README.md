@@ -16,9 +16,14 @@ producers](https://github.com/InternetHealthReport/kafka-toolbox/tree/master/pee
 
 ## Installation
 
-Clone the repository and initialize the submodule.
+Clone the repository and initialize the submodule:
 ```
 git clone --recurse-submodules git@github.com:m-appel/iplookup.git
+```
+
+Install required Python dependencies:
+```
+pip install -r requirements.txt -r kafka_wrapper/requirements.txt
 ```
 
 ## Usage
