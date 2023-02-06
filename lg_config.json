@@ -1,0 +1,31 @@
+{
+  "output_dir": "lg_dumps/",
+
+  "looking_glasses": {
+    "de-cix": {
+      "url": "https://lg.de-cix.net/api/v1"
+    },
+    "ix-br": {
+      "url": "https://lg.ix.br/api/v1",
+      "workers": 1
+    },
+    "megaport": {
+      "url": "https://lg.megaport.com/api/v1"
+    },
+    "ams-ix": {
+      "url": "https://lg.ams-ix.net/api/v1"
+    },
+    "bcix": {
+      "url": "https://lg.bcix.de/api/v1"
+    },
+    "netnod": {
+      "url": "https://lg.netnod.se/api/v1"
+    },
+    "linx": {
+      "url": "https://alice-rs.linx.net/api/v1"
+    },
+    "jedix": {
+      "url": "https://alice-rs-jedix.linx.net/api/v1"
+    }
+  }
+}

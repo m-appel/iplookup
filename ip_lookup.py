@@ -1,6 +1,7 @@
 import bz2
 import configparser
 import logging
+import os
 import pickle
 import sys
 from collections import defaultdict
@@ -34,6 +35,8 @@ class IPLookup:
     of ip2asn and construct the data for ip2ixp from the corresponding
     Kafka topic.
     """
+
+    LG_DUMP_FILE_SUFFIX = '.pickle.bz2'
 
     def __init__(self,
                  config: configparser.ConfigParser,
@@ -75,6 +78,9 @@ class IPLookup:
         self.__fill_ixp_asn_dict_from_kafka(ip2ixp_netixlan_kafka_topic,
                                             ip2ixp_bootstrap_servers,
                                             ip2ixp_read_ts)
+        if config.has_option('ip2ixp', 'lg_dump_path'):
+            self.__fill_ixp_asn_dict_from_lg_dumps(config.get('ip2ixp', 'lg_dump_path'))
+
         self.initialized = True
 
     def __build_asn_sets_from_radix(self, db: str):
@@ -168,6 +174,28 @@ class IPLookup:
                         self.ixp_ipv6_asns[curr_as].prefix_ip_sum -= 1
                     self.ixp_asn_dict[val['ipaddr6']] = asn
         logging.info(f'Loaded {len(self.ixp_asn_dict)} IXP IP -> AS mappings')
+
+    def __fill_ixp_asn_dict_from_lg_dumps(self, lg_dump_path: str) -> None:
+        if not lg_dump_path.endswith('/'):
+            lg_dump_path += '/'
+
+        logging.info(f'Loading route server looking glass dumps from: {lg_dump_path}')
+        for entry in os.scandir(lg_dump_path):
+            if not entry.is_file() or not entry.name.endswith(self.LG_DUMP_FILE_SUFFIX):
+                continue
+            logging.info(f'Loading dump: {entry.name}')
+            try:
+                with bz2.open(f'{lg_dump_path}{entry.name}', 'rb') as f:
+                    dump_data = pickle.load(f)
+            except Exception as e:
+                logging.error(f'Failed to load dump: {e}')
+                continue
+            for ip, asn in dump_data.items():
+                if ip in self.ixp_asn_dict and self.ixp_asn_dict[ip] != asn:
+                    logging.warning(f'Overwriting IXP member for IP {ip} from PeeringDB with looking glass data. '
+                                    f'PDB: {self.ixp_asn_dict[ip]} LG: {asn}')
+                self.ixp_asn_dict[ip] = asn
+            logging.info(f'Loaded {len(dump_data)} IXP IP -> AS mappings')
 
     def ip2asn(self, ip: str) -> str:
         """Find the ASN corresponding to the given IP address."""
