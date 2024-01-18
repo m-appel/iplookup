@@ -12,6 +12,7 @@ from urllib3.util.retry import Retry
 
 
 class Crawler:
+    SUBDIR_NAME = 'data'
     OUTPUT_SUFFIX = '.pickle.bz2'
     RAW_OUTPUT_SUFFIX = '.raw.pickle.bz2'
     DATE_FMT = '%Y%m%d'
@@ -24,11 +25,17 @@ class Crawler:
             'routeservers': f'{api_url}/routeservers',
             'neighbors': api_url + '/routeservers/{rs}/neighbors'
         }
-        if not output_dir.endswith('/'):
-            output_dir += '/'
+        self.name = name
+        self.output_dir = output_dir
+        subdir = os.path.join(output_dir, self.SUBDIR_NAME)
+
         output_file_date = datetime.now(tz=timezone.utc).strftime(self.DATE_FMT)
-        self.output_file = f'{output_dir}{self.OUTPUT_FILE_FMT.format(name=name, date=output_file_date)}'
-        self.raw_output_file = f'{output_dir}{self.RAW_OUTPUT_FILE_FMT.format(name=name, date=output_file_date)}'
+        output_file_name = self.OUTPUT_FILE_FMT.format(name=name, date=output_file_date)
+        self.output_file = os.path.join(subdir, output_file_name)
+        self.output_file_relative = os.path.join(self.SUBDIR_NAME, output_file_name)
+
+        raw_output_file_name = self.RAW_OUTPUT_FILE_FMT.format(name=name, date=output_file_date)
+        self.raw_output_file = os.path.join(subdir, raw_output_file_name)
         self.dump_raw = dump_raw
 
         self.workers = workers
@@ -36,6 +43,10 @@ class Crawler:
         self.data = dict()
         self.raw_data = dict()
         self.__initialize_session()
+
+    def __update_symlinks(self) -> bool:
+        data_symlink = os.path.join(self.output_dir, self.OUTPUT_FILE_FMT.format(name=self.name, date='latest'))
+        return self.make_symlink(self.output_file_relative, data_symlink)
 
     def __initialize_session(self) -> None:
         self.session = FuturesSession(max_workers=self.workers)
@@ -47,6 +58,17 @@ class Crawler:
         adapter = HTTPAdapter(max_retries=retry)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
+
+    @staticmethod
+    def make_symlink(src: str, dst: str) -> bool:
+        if os.path.islink(dst):
+            os.remove(dst)
+        elif os.path.exists(dst):
+            logging.error(f'Can not update symlink {dst} -> {src}')
+            logging.error('Destination exists, but is not a symlink.')
+            return True
+        os.symlink(src, dst)
+        return False
 
     @staticmethod
     def decode_json(resp: Response, *args, **kwargs) -> None:
@@ -125,4 +147,4 @@ class Crawler:
                 self.data[address] = asn
         logging.info(f'Got data for {len(self.data)} interfaces.')
         self.__dump()
-        return False
+        return self.__update_symlinks()
