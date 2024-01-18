@@ -7,17 +7,18 @@ from json import JSONDecodeError
 from typing import Iterable, Tuple
 
 from requests.adapters import HTTPAdapter, Response
-from requests.exceptions import ChunkedEncodingError
-from urllib3.util.retry import Retry
 from requests_futures.sessions import FuturesSession
+from urllib3.util.retry import Retry
 
 
 class Crawler:
     OUTPUT_SUFFIX = '.pickle.bz2'
+    RAW_OUTPUT_SUFFIX = '.raw.pickle.bz2'
     DATE_FMT = '%Y%m%d'
     OUTPUT_FILE_FMT = '{name}.{date}' + OUTPUT_SUFFIX
+    RAW_OUTPUT_FILE_FMT = '{name}.{date}' + RAW_OUTPUT_SUFFIX
 
-    def __init__(self, name: str, api_url: str, output_dir: str, workers: int = 4) -> None:
+    def __init__(self, name: str, api_url: str, output_dir: str, workers: int = 4, dump_raw: bool = False) -> None:
         api_url = api_url.rstrip('/')
         self.urls = {
             'routeservers': f'{api_url}/routeservers',
@@ -27,10 +28,13 @@ class Crawler:
             output_dir += '/'
         output_file_date = datetime.now(tz=timezone.utc).strftime(self.DATE_FMT)
         self.output_file = f'{output_dir}{self.OUTPUT_FILE_FMT.format(name=name, date=output_file_date)}'
+        self.raw_output_file = f'{output_dir}{self.RAW_OUTPUT_FILE_FMT.format(name=name, date=output_file_date)}'
+        self.dump_raw = dump_raw
 
         self.workers = workers
         logging.info(f'Running with {workers} workers.')
         self.data = dict()
+        self.raw_data = dict()
         self.__initialize_session()
 
     def __initialize_session(self) -> None:
@@ -58,24 +62,24 @@ class Crawler:
             logging.error(resp.text)
             resp.data = {}
 
-    def fetch_urls(self, urls: list) -> Iterable:
+    def fetch_urls(self, id_urls: list) -> Iterable:
         queries = list()
-        for url in urls:
-            queries.append(self.session.get(url,
-                                            hooks={'response': self.decode_json},
-                                            timeout=60))
-        for query in queries:
+        for (rs_id, url) in id_urls:
+            queries.append((rs_id, self.session.get(url,
+                                                    hooks={'response': self.decode_json},
+                                                    timeout=60)))
+        for rs_id, query in queries:
             try:
                 resp = query.result()
-                yield resp.ok, resp.data
-            except ChunkedEncodingError as e:
+                yield rs_id, resp.ok, resp.data
+            except Exception as e:
                 logging.error(f'Failed to retrieve data for {query}')
                 logging.error(e)
-                return False, dict()
+                return rs_id, False, dict()
 
     def fetch_url(self, url: str) -> Tuple[bool, dict]:
         """Helper function for single URL."""
-        for status, resp in self.fetch_urls([url]):
+        for _, status, resp in self.fetch_urls([(str(), url)]):
             return status, resp
         return False, dict()
 
@@ -84,6 +88,10 @@ class Crawler:
         os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
         with bz2.open(self.output_file, 'wb') as f:
             pickle.dump(self.data, f)
+        if self.dump_raw:
+            logging.info(f'Writing raw output to {self.output_file}')
+            with bz2.open(self.raw_output_file, 'wb') as f:
+                pickle.dump(self.raw_data, f)
 
     def run(self) -> bool:
         logging.info(f'Fetching route servers from {self.urls["routeservers"]}')
@@ -91,12 +99,16 @@ class Crawler:
         if not is_ok:
             return True
         routeserver_list = routeservers['routeservers']
+        self.raw_data['routeservers'] = routeserver_list
+        self.raw_data['neighbors'] = dict()
 
         logging.info(f'Fetching neighbor information from {len(routeserver_list)} route servers.')
-        neighbor_urls = [self.urls['neighbors'].format(rs=rs['id']) for rs in routeserver_list]
-        for is_ok, neighbor_list_root in self.fetch_urls(neighbor_urls):
+        neighbor_urls = [(rs['id'], self.urls['neighbors'].format(rs=rs['id']))
+                         for rs in routeserver_list]
+        for rs_id, is_ok, neighbor_list_root in self.fetch_urls(neighbor_urls):
             if not is_ok:
                 continue
+            self.raw_data['neighbors'][rs_id] = neighbor_list_root
             if 'neighbors' in neighbor_list_root:
                 neighbor_list = neighbor_list_root['neighbors']
             elif 'neighbours' in neighbor_list_root:

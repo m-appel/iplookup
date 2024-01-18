@@ -5,9 +5,11 @@ import sys
 
 from alice_lg import Crawler
 
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('config')
+    parser.add_argument('--dump-raw', action='store_true', help='dump additional raw data')
     args = parser.parse_args()
 
     FORMAT = '%(asctime)s %(levelname)s %(message)s'
@@ -23,13 +25,14 @@ def main() -> None:
         config = json.load(f)
 
     output_dir = config['output_dir']
+    dump_raw = args.dump_raw
     failed_crawlers = list()
     for name, props in config['looking_glasses'].items():
         url = props['url']
         if 'workers' in props:
-            crawler = Crawler(name, url, output_dir, workers=props['workers'])
+            crawler = Crawler(name, url, output_dir, workers=props['workers'], dump_raw=dump_raw)
         else:
-            crawler = Crawler(name, url, output_dir)
+            crawler = Crawler(name, url, output_dir, dump_raw=dump_raw)
         if crawler.run():
             failed_crawlers.append(name)
 
