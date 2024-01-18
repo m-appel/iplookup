@@ -44,14 +44,10 @@ class IPLookup:
         self.initialized = False
         try:
             ip2asn_dir = config.get('ip2asn', 'path').rstrip('/')
-            ip2asn_db = config.get('ip2asn', 'db',
-                                   fallback=f'{ip2asn_dir}/db/latest.pickle')
+            ip2asn_db = config.get('ip2asn', 'db', fallback=f'{ip2asn_dir}/db/latest.pickle')
             ip2ixp_ix_kafka_topic = config.get('ip2ixp', 'ix_kafka_topic')
-            ip2ixp_netixlan_kafka_topic = config.get('ip2ixp',
-                                                     'netixlan_kafka_topic')
-            ip2ixp_bootstrap_servers = config.get('ip2ixp',
-                                                  'kafka_bootstrap_servers',
-                                                  fallback='localhost:9092')
+            ip2ixp_netixlan_kafka_topic = config.get('ip2ixp', 'netixlan_kafka_topic')
+            ip2ixp_bootstrap_servers = config.get('ip2ixp', 'kafka_bootstrap_servers', fallback='localhost:9092')
         except configparser.NoSectionError as e:
             logging.error(f'Missing section in configuration file: {e}')
             return
@@ -69,15 +65,11 @@ class IPLookup:
 
         # ip2ixp initialization.
         self.ixp_rtree = radix.Radix()
-        self.__build_ixp_rtree_from_kafka(ip2ixp_ix_kafka_topic,
-                                          ip2ixp_bootstrap_servers,
-                                          ip2ixp_read_ts)
+        self.__build_ixp_rtree_from_kafka(ip2ixp_ix_kafka_topic, ip2ixp_bootstrap_servers, ip2ixp_read_ts)
         self.ixp_asn_dict = dict()
         self.ixp_ipv4_asns = defaultdict(Prefixes)
         self.ixp_ipv6_asns = defaultdict(Prefixes)
-        self.__fill_ixp_asn_dict_from_kafka(ip2ixp_netixlan_kafka_topic,
-                                            ip2ixp_bootstrap_servers,
-                                            ip2ixp_read_ts)
+        self.__fill_ixp_asn_dict_from_kafka(ip2ixp_netixlan_kafka_topic, ip2ixp_bootstrap_servers, ip2ixp_read_ts)
         if config.has_option('ip2ixp', 'lg_dump_path'):
             self.__fill_ixp_asn_dict_from_lg_dumps(config.get('ip2ixp', 'lg_dump_path'))
 
@@ -88,27 +80,20 @@ class IPLookup:
             rtree: radix.Radix = pickle.load(f)
         for node in rtree:
             if 'as' not in node.data:
-                logging.warning(f'Missing "as" attribute for radix node: '
-                                f'{node}')
+                logging.warning(f'Missing "as" attribute for radix node: {node}')
                 continue
             if node.family == AF_INET:
                 address_count = 2 ** (32 - node.prefixlen)
                 self.i2asn_ipv4_asns[node.data['as']].prefix_count += 1
-                self.i2asn_ipv4_asns[node.data['as']].prefix_ip_sum += \
-                    address_count
+                self.i2asn_ipv4_asns[node.data['as']].prefix_ip_sum += address_count
             elif node.family == AF_INET6:
                 address_count = 2 ** (64 - node.prefixlen)
                 self.i2asn_ipv6_asns[node.data['as']].prefix_count += 1
-                self.i2asn_ipv6_asns[node.data['as']].prefix_ip_sum += \
-                    address_count
+                self.i2asn_ipv6_asns[node.data['as']].prefix_ip_sum += address_count
             else:
-                logging.warning(f'Unknown protocol family {node.family} for '
-                                f'node {node}')
+                logging.warning(f'Unknown protocol family {node.family} for node {node}')
 
-    def __build_ixp_rtree_from_kafka(self,
-                                     topic: str,
-                                     bootstrap_servers: str,
-                                     start_ts: int):
+    def __build_ixp_rtree_from_kafka(self, topic: str, bootstrap_servers: str, start_ts: int):
         if start_ts:
             reader = KafkaReader([topic], bootstrap_servers, start_ts)
         else:
@@ -117,34 +102,29 @@ class IPLookup:
         prefix_set = set()
         with reader:
             for val in reader.read():
-                if 'prefix' not in val \
-                        or 'name' not in val \
-                        or 'ix_id' not in val:
-                    logging.warning(f'Received invalid entry from Kafka: '
-                                    f'{val}')
+                if ('prefix' not in val
+                        or 'name' not in val
+                        or 'ix_id' not in val):
+                    logging.warning(f'Received invalid entry from Kafka: {val}')
                     continue
                 node = self.ixp_rtree.add(val['prefix'])
                 node.data['name'] = val['name']
                 node.data['id'] = val['ix_id']
                 ix_id_set.add(val['ix_id'])
                 prefix_set.add(val['prefix'])
-        logging.info(f'Loaded {len(ix_id_set)} IXPs with {len(prefix_set)} '
-                     f'prefixes')
+        logging.info(f'Loaded {len(ix_id_set)} IXPs with {len(prefix_set)} prefixes')
 
-    def __fill_ixp_asn_dict_from_kafka(self,
-                                       topic: str,
-                                       bootstrap_servers: str,
-                                       start_ts: int):
+    def __fill_ixp_asn_dict_from_kafka(self, topic: str, bootstrap_servers: str, start_ts: int):
         if start_ts:
             reader = KafkaReader([topic], bootstrap_servers, start_ts)
         else:
             reader = KafkaReader([topic], bootstrap_servers)
         with reader:
             for val in reader.read():
-                if 'ipaddr4' not in val or 'ipaddr6' not in val \
-                        or 'asn' not in val:
-                    logging.warning(f'Received invalid entry from Kafka: '
-                                    f'{val}')
+                if ('ipaddr4' not in val
+                    or 'ipaddr6' not in val
+                        or 'asn' not in val):
+                    logging.warning(f'Received invalid entry from Kafka: {val}')
                     continue
                 if val['asn'] is None:
                     continue
@@ -155,9 +135,7 @@ class IPLookup:
                         self.ixp_ipv4_asns[asn].prefix_ip_sum += 1
                     elif self.ixp_asn_dict[val['ipaddr4']] != asn:
                         curr_as = self.ixp_asn_dict[val['ipaddr4']]
-                        logging.debug(f'Updating AS entry for IP '
-                                      f'{val["ipaddr4"]}: '
-                                      f'{curr_as} -> {asn}')
+                        logging.debug(f'Updating AS entry for IP {val["ipaddr4"]}: {curr_as} -> {asn}')
                         self.ixp_ipv4_asns[curr_as].prefix_count -= 1
                         self.ixp_ipv4_asns[curr_as].prefix_ip_sum -= 1
                     self.ixp_asn_dict[val['ipaddr4']] = asn
@@ -167,25 +145,20 @@ class IPLookup:
                         self.ixp_ipv6_asns[asn].prefix_ip_sum += 1
                     elif self.ixp_asn_dict[val['ipaddr6']] != asn:
                         curr_as = self.ixp_asn_dict[val['ipaddr6']]
-                        logging.debug(f'Updating AS entry for IP '
-                                      f'{val["ipaddr6"]}: '
-                                      f'{curr_as} -> {val["asn"]}')
+                        logging.debug(f'Updating AS entry for IP {val["ipaddr6"]}: {curr_as} -> {val["asn"]}')
                         self.ixp_ipv6_asns[curr_as].prefix_count -= 1
                         self.ixp_ipv6_asns[curr_as].prefix_ip_sum -= 1
                     self.ixp_asn_dict[val['ipaddr6']] = asn
         logging.info(f'Loaded {len(self.ixp_asn_dict)} IXP IP -> AS mappings')
 
     def __fill_ixp_asn_dict_from_lg_dumps(self, lg_dump_path: str) -> None:
-        if not lg_dump_path.endswith('/'):
-            lg_dump_path += '/'
-
         logging.info(f'Loading route server looking glass dumps from: {lg_dump_path}')
         for entry in os.scandir(lg_dump_path):
             if not entry.is_file() or not entry.name.endswith(self.LG_DUMP_FILE_SUFFIX):
                 continue
             logging.info(f'Loading dump: {entry.name}')
             try:
-                with bz2.open(f'{lg_dump_path}{entry.name}', 'rb') as f:
+                with bz2.open(os.path.join(lg_dump_path, entry.name), 'rb') as f:
                     dump_data = pickle.load(f)
             except Exception as e:
                 logging.error(f'Failed to load dump: {e}')
