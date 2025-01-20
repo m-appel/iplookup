@@ -11,24 +11,22 @@ LAN prefixes as well as IPs of individual IXP participants. This information
 enables mapping to IXPs (using peering LAN prefixes) and additional ASN mappings
 (using participant IPs).
 
-The PeeringDB information can be either obtained from dumps created by
-`fetch-pdb-dump.py` or from Kafka topics as created by [these
-producers](https://github.com/InternetHealthReport/kafka-toolbox/tree/master/peeringdb/producers).
+The PeeringDB information can be obtained from dumps created by `fetch-pdb-dump.py`.
 
 Looking glass information is obtained by running `fetch-lg-dumps.py`.
 
 ## Installation
 
-Clone the repository and initialize the submodule:
+Clone the repository:
 
 ```bash
-git clone --recurse-submodules git@github.com:m-appel/iplookup.git
+git clone git@github.com:m-appel/iplookup.git
 ```
 
 Install required Python dependencies:
 
 ```bash
-pip install -r requirements.txt -r kafka_wrapper/requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -40,9 +38,8 @@ The constructor takes two parameters:
 
 This repository does not include [ip2asn](https://github.com/romain-fontugne/ip2asn) as
 a submodule because it has grown quite large. Instead, you have to specify the path to
-an existing installation instead. In addition, either the location of `ix` and
-`netixlan` files or names of Kafka topics need to be specified. You can combine both
-data sources, but only exactly one per `ix`/`netixlan` is allowed.
+an existing installation instead. In addition, the location of `ix` and `netixlan` files
+need to be specified.
 
 ### Example configuration
 
@@ -53,16 +50,8 @@ path = path/to/ip2asn
 db = path/to/rib.pickle.bz2
 
 [ip2ixp]
-# Either ix_file or ix_kafka_topic
 ix_file = pdb_dumps/pdb.ix.latest.pickle.bz2
-# ix_kafka_topic = ix_topic
-
-# Either netixlan_file or netixlan_kafka_topic
-# netixlan_file = pdb_dumps/pdb.netixlan.latest.pickle.bz2
-netixlan_kafka_topic = netixlan_topic
-
-# Optional, defaults to localhost:9092
-kafka_bootstrap_servers = kafka:9092
+netixlan_file = pdb_dumps/pdb.netixlan.latest.pickle.bz2
 ```
 
 ### Example code
@@ -82,7 +71,3 @@ if not iplookup.initialized:
 asn = iplookup.ip2asn('x.x.x.x')  # IP as a string.
 
 ```
-
-You can/should use the `ip2ixp_read_ts` parameter (specified as UNIX Epoch **in
-milliseconds**) to limit the amount of data consumed from Kafka, and to reduce the
-likelihood of including stale PeeringDB entries.

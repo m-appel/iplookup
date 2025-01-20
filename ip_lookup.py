@@ -10,8 +10,6 @@ from socket import AF_INET, AF_INET6
 
 import radix
 
-from kafka_wrapper.kafka_reader import KafkaReader
-
 
 @dataclass
 class Prefixes:
@@ -32,7 +30,7 @@ class IPLookup:
 
     Provide the same interface to look up ASN info etc. from IPs, but try both data
     sources for retrieval. Use a provided offline version of ip2asn and construct the
-    data for ip2ixp from provided files or Kafka topics.
+    data for ip2ixp from provided files.
 
     This tool can also be used to find the most-specific prefix for an IP or to get
     information about the IP's visibility in ip2asn and/or ip2ixp.
@@ -41,30 +39,18 @@ class IPLookup:
     LG_DUMP_FILE_SUFFIX = '.pickle.bz2'
 
     def __init__(self,
-                 config: configparser.ConfigParser,
-                 ip2ixp_read_ts: int = None):
+                 config: configparser.ConfigParser):
         self.initialized = False
         try:
             ip2asn_dir = config.get('ip2asn', 'path').rstrip('/')
             ip2asn_db = config.get('ip2asn', 'db', fallback=f'{ip2asn_dir}/db/latest.pickle')
-            ip2ixp_ix_kafka_topic = config.get('ip2ixp', 'ix_kafka_topic', fallback=None)
-            ip2ixp_netixlan_kafka_topic = config.get('ip2ixp', 'netixlan_kafka_topic', fallback=None)
-            ip2ixp_bootstrap_servers = config.get('ip2ixp', 'kafka_bootstrap_servers', fallback='localhost:9092')
-            ip2ixp_ix_file = config.get('ip2ixp', 'ix_file', fallback=None)
-            ip2ixp_netixlan_file = config.get('ip2ixp', 'netixlan_file', fallback=None)
+            ip2ixp_ix_file = config.get('ip2ixp', 'ix_file')
+            ip2ixp_netixlan_file = config.get('ip2ixp', 'netixlan_file')
         except configparser.NoSectionError as e:
             logging.error(f'Missing section in configuration file: {e}')
             return
         except configparser.NoOptionError as e:
             logging.error(f'Missing option in configuration file: {e}')
-            return
-        if (not (ip2ixp_ix_file or ip2ixp_ix_kafka_topic)
-                or not (ip2ixp_netixlan_file or ip2ixp_netixlan_kafka_topic)):
-            logging.error('Either file or kafka topic is required for ix and netixlan information.')
-            return
-        if (ip2ixp_ix_file and ip2ixp_ix_kafka_topic
-                or ip2ixp_netixlan_file and ip2ixp_netixlan_kafka_topic):
-            logging.error('Both file and kafka topic specified for ix or netixlan. Please decide.')
             return
 
         # ip2asn initialization.
@@ -77,17 +63,11 @@ class IPLookup:
 
         # ip2ixp initialization.
         self.ixp_rtree = radix.Radix()
-        if ip2ixp_ix_file:
-            self.__build_ixp_rtree_from_file(ip2ixp_ix_file)
-        else:
-            self.__build_ixp_rtree_from_kafka(ip2ixp_ix_kafka_topic, ip2ixp_bootstrap_servers, ip2ixp_read_ts)
+        self.__build_ixp_rtree_from_file(ip2ixp_ix_file)
         self.ixp_asn_dict = dict()
         self.ixp_ipv4_asns = defaultdict(Prefixes)
         self.ixp_ipv6_asns = defaultdict(Prefixes)
-        if ip2ixp_netixlan_file:
-            self.__fill_ixp_asn_dict_from_file(ip2ixp_netixlan_file)
-        else:
-            self.__fill_ixp_asn_dict_from_kafka(ip2ixp_netixlan_kafka_topic, ip2ixp_bootstrap_servers, ip2ixp_read_ts)
+        self.__fill_ixp_asn_dict_from_file(ip2ixp_netixlan_file)
         if config.has_option('ip2ixp', 'lg_dump_path'):
             self.__fill_ixp_asn_dict_from_lg_dumps(config.get('ip2ixp', 'lg_dump_path'))
 
@@ -147,16 +127,6 @@ class IPLookup:
         logging.info(f'Reading ix entries from file: {file}')
         self.__build_ixp_rtree(self.pickle_bz2_file_generator(file))
 
-    def __build_ixp_rtree_from_kafka(self, topic: str, bootstrap_servers: str, start_ts: int):
-        """Wrapper function of __build_ixp_rtree for Kafka source."""
-        logging.info(f'Reading ix entries from Kafka topic: {topic}')
-        if start_ts:
-            reader = KafkaReader([topic], bootstrap_servers, start_ts)
-        else:
-            reader = KafkaReader([topic], bootstrap_servers)
-        with reader:
-            self.__build_ixp_rtree(reader.read())
-
     def __fill_ixp_asn_dict(self, generator):
         """Build a dictionary for IP-to-ASN mapping based in IXP membership information."""
         for val in generator:
@@ -194,16 +164,6 @@ class IPLookup:
         """Wrapper function of __fill_ixp_asn_dict for file source."""
         logging.info(f'Reading netixlan entries from file: {file}')
         self.__fill_ixp_asn_dict(self.pickle_bz2_file_generator(file))
-
-    def __fill_ixp_asn_dict_from_kafka(self, topic: str, bootstrap_servers: str, start_ts: int):
-        """Wrapper function of __fill_ixp_asn_dict for Kafka source."""
-        logging.info(f'Reading netixlan entries from Kafka topic: {topic}')
-        if start_ts:
-            reader = KafkaReader([topic], bootstrap_servers, start_ts)
-        else:
-            reader = KafkaReader([topic], bootstrap_servers)
-        with reader:
-            self.__fill_ixp_asn_dict(reader.read())
 
     def __fill_ixp_asn_dict_from_lg_dumps(self, lg_dump_path: str) -> None:
         """Enhance the IP-to-ASN mapping with looking glass information.
