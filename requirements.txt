@@ -4,7 +4,6 @@ certifi==2024.12.14
 charset-normalizer==3.4.1
 exceptiongroup==1.2.2
 idna==3.10
-pkg_resources==0.0.0
 platformdirs==4.3.6
 py-radix==0.10.0
 requests==2.32.3
